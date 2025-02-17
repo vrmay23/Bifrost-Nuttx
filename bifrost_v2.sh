@@ -3,7 +3,7 @@
 #-------------------------------------------------------------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------------------------------------------------------------
 #
-# Title:        Cloning, Installing and Building NuttX for ESP32-C3
+# Title:        Cloning, Installing and Building NuttX for ESP32-C3, Raspberry Pi Pico and Nuttx Simulation
 # Author:       Vinicius Rodrigo May (vmay23 ~QsiX Embedded Labs~)
 # Date:         2023/05/16
 #

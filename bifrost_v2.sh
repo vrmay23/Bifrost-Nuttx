@@ -1,5 +1,18 @@
 #!/bin/bash
 
+#-------------------------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------------------------
+#
+# Title:        Cloning, Installing and Building NuttX for ESP32-C3
+# Author:       Vinicius Rodrigo May (vmay23 ~QsiX Embedded Labs~)
+# Date:         2023/05/16
+#
+# rev date:     2025/02/17
+# Rev Reason:   integrating RaspberryPI_Pico to Bifrost automation
+#
+# referencies:  Nuttx Channel (Alan Carvalho de Assis - https://www.youtube.com/@nuttxchannel)
+#               Embarcados TV (Sara Cunha - https://www.youtube.com/watch?v=B3fKhR7tsVM)
+#
 #   0-Download pre-requirements (libs)
 #   1-Download NuttX [SO, Apps, tools]
 #   2-Download Tools [openOCD, minicom]
@@ -24,7 +37,9 @@
 #                        
 #                 /venv
 #                      /.esp32_venv
-
+#
+#-------------------------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------------------------
 
 #======================================================#
 #=====               GLOBAL VARIABLES              ====#

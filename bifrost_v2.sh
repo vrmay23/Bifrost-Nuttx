@@ -250,7 +250,7 @@ download_nuttx_rtos(){
     # cloning repo 'nuttx' (if it does not exist in this folder) or update it case it already exist
     if [ ! -d "nuttx" ]; then
         echo "Cloning nuttx directory: 'nuttx'..."
-        if ! git clone https://github.com/apache/incubator-nuttx.git nuttx; then
+        if ! git clone https://github.com/apache/nuttx.git nuttx; then
             echo "Apologize! we ran into an issue while trying to clone 'nuttx'."
             exit 1
         fi
@@ -272,7 +272,7 @@ download_nuttx_apps(){
     # cloning repo 'apps' (if it does not exist in this folder) or update it case it already exist
     if [ ! -d "apps" ]; then
         echo "Cloning nuttx directory: 'apps'..."
-        if ! git clone https://github.com/apache/incubator-nuttx-apps.git apps; then
+        if ! git clone https://github.com/apache/nuttx-apps.git apps; then
             echo "Apologize! we ran into an issue while trying to clone 'apps'."
             exit 1
         fi

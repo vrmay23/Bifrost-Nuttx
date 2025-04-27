@@ -7,8 +7,8 @@
 # Author:       Vinicius Rodrigo May (vmay23 ~QsiX Embedded Labs~)
 # Date:         2023/05/16
 #
-# rev date:     2025/02/17
-# Rev Reason:   integrating RaspberryPI_Pico to Bifrost automation
+# rev date:     2025/04/27
+# Rev Reason:   Adding support to kconfig (menuconfig) directly from ubuntu repository
 #
 # referencies:  Nuttx Channel (Alan Carvalho de Assis - https://www.youtube.com/@nuttxchannel)
 #               Embarcados TV (Sara Cunha - https://www.youtube.com/watch?v=B3fKhR7tsVM)
@@ -97,7 +97,7 @@ Raindal_Guide(){
 Install_Pre_Requirements(){
     REQUIRED_PACKAGES="jimtcl libjim-dev autoconf automake bison build-essential flex gcc-arm-none-eabi gperf libtool libncurses5-dev libusb-dev  \
                        libusb-1.0-0-dev pkg-config gettext texinfo libncursesw5-dev xxd git genromfs libgmp-dev libmpc-dev libmpfr-dev libisl-dev \
-                       binutils-dev libelf-dev libexpat1-dev gcc-multilib g++-multilib picocom u-boot-tools util-linux python3 python3-pip"
+                       binutils-dev libelf-dev libexpat1-dev gcc-multilib g++-multilib picocom u-boot-tools util-linux python3 python3-pip kconfig-frontends"
 
     for package in $REQUIRED_PACKAGES; do
         if ! dpkg -l | grep -qw "$package"; then
@@ -316,6 +316,61 @@ install_kconfig(){
 	fi
 
 	sudo ldconfig
+}
+
+install_kconfig_clean(){
+
+    echo ">> Baixando nuttx-tools..."
+
+    # Baixar o nuttx-tools se não existir
+    # if [ ! -d "$NUTTX_TOOLS_DIR" ]; then
+    #     git clone 	https://github.com/apache/nuttx-tools.git "$NUTTX_TOOLS_DIR" || {
+    #         echo "Erro ao clonar nuttx-tools."
+    #         exit 1
+    #     }
+    # fi
+
+    cd "$NUTTX_TOOLS_DIR/kconfig-frontends" || {
+        echo "Erro ao entrar na pasta kconfig-frontends."
+        exit 1
+    }
+
+    echo ">> Configurando kconfig-frontends..."
+
+    if ! ./configure --prefix=/usr --enable-mconf; then
+        echo "Configuração do kconfig-frontends falhou."
+        exit 1
+    fi
+
+    echo ">> Rodando autotools..."
+    aclocal
+    autoconf
+    automake --add-missing --force-missing
+
+    echo ">> Corrigindo dependências de bibliotecas..."
+    if [ -f /usr/local/riscv64-unknown-elf-gcc-8.3.0/lib/libcc1.so ]; then
+        sudo ln -sf /usr/local/riscv64-unknown-elf-gcc-8.3.0/lib/libcc1.so /usr/local/lib/libcc1.so.0
+    fi
+    if [ -f /usr/local/riscv64-unknown-elf-gcc-8.3.0/lib/libexpat.so.1 ]; then
+        sudo ln -sf /usr/local/riscv64-unknown-elf-gcc-8.3.0/lib/libexpat.so.1 /usr/local/lib/libexpat.so.1
+    fi
+
+    echo ">> Compilando kconfig-frontends..."
+    if ! make -j$(nproc); then
+        echo "Compilação do kconfig-frontends falhou."
+        exit 1
+    fi
+
+    echo ">> Instalando kconfig-frontends..."
+    if ! sudo make install; then
+        echo "Instalação do kconfig-frontends falhou."
+        exit 1
+    fi
+
+    echo ">> Atualizando cache do linker..."
+    sudo ldconfig
+
+    echo ">> Kconfig-frontends instalado com sucesso!"
 }
 #======================================================#
 
@@ -877,4 +932,3 @@ while [[ $# -gt 0 ]]; do
     esac
     shift  # Move para a próxima opção
 done
-

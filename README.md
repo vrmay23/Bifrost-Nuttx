@@ -28,7 +28,7 @@ This script handles all steps required to build and run NuttX from scratch, incl
 ---
 
 ## 📁 Project Structure
-
+```bash
 After setup, your filesystem will look like this:
 ~/embedded_sys
 ~/embedded_sys/tools
@@ -36,10 +36,11 @@ After setup, your filesystem will look like this:
 ~/embedded_sys/nuttxspace/nuttx
 ~/embedded_sys/nuttxspace/apps
 ~/embedded_sys/nuttxspace/tools
+```
 
 
 ## 🛠️ Usage
-
+```bash
 You can run the script with multiple flags.  
 Use `--help` to see all available options:
 
@@ -91,6 +92,7 @@ External tools:
 Other:
   -festival-pr         Install Festival TTS (optional)
   -H, --help           Show this help message
+```
 
 
 

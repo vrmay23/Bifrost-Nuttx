@@ -97,7 +97,7 @@ Raindal_Guide(){
 Install_Pre_Requirements(){
     REQUIRED_PACKAGES="jimtcl libjim-dev autoconf automake bison build-essential flex gcc-arm-none-eabi gperf libtool libncurses5-dev libusb-dev  \
                        libusb-1.0-0-dev pkg-config gettext texinfo libncursesw5-dev xxd git genromfs libgmp-dev libmpc-dev libmpfr-dev libisl-dev \
-                       binutils-dev libelf-dev libexpat1-dev gcc-multilib g++-multilib picocom u-boot-tools util-linux python3 python3-pip kconfig-frontends"
+                       binutils-dev libelf-dev libexpat1-dev gcc-multilib g++-multilib picocom u-boot-tools util-linux python3 python3-pip kconfig-frontends festival"
 
     for package in $REQUIRED_PACKAGES; do
         if ! dpkg -l | grep -qw "$package"; then
@@ -432,6 +432,11 @@ Install_Pre_Requirements_PICO(){
 #=====    Download raspberry_pi pico Tool Chain    ====#
 #======================================================#
 download_toolchain_raspberry_pico(){
+    if [ ! -d "$TOOLS_DIR" ]; then
+        echo "Creating directory: $TOOLS_DIR"
+        mkdir -p "$TOOLS_DIR"
+    fi
+    
     cd "$PROJECT_DIR"                                  # ~/embedded_sys
     mkdir -p "$RASP_TOOLS_DIR"                         # ~/embedded_sys/tools/raspberry
     cd "$RASP_TOOLS_DIR"                                                   
@@ -765,6 +770,11 @@ install_esptool() {
 #=====           Download Risc-V ToolChai          ====#
 #======================================================#
 download_riscv_tools(){
+    if [ ! -d "$TOOLS_DIR" ]; then
+        echo "Creating directory: $TOOLS_DIR"
+        mkdir -p "$TOOLS_DIR"
+    fi
+    
     cd "$TOOLS_DIR"
     mkdir -p "$ESP32_TOOL_DIR"
     cd "$ESP32_TOOL_DIR"
@@ -805,6 +815,11 @@ download_riscv_tools(){
 #=====         download esp32_C3 binary            ====#
 #======================================================#
 download_esp32_c3_bin(){
+    if [ ! -d "$TOOLS_DIR" ]; then
+        echo "Creating directory: $TOOLS_DIR"
+        mkdir -p "$TOOLS_DIR"
+    fi
+    
     if [ ! -d "$ESP32_TOOL_DIR" ]; then
         echo "Criando diretório $ESP32_TOOL_DIR..."
         mkdir -p "$ESP32_TOOL_DIR"

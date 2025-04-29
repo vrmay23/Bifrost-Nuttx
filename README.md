@@ -44,7 +44,7 @@ After setup, your filesystem will look like this:
 You can run the script with multiple flags.  
 Use `--help` to see all available options:
 
-**./bifrost.sh --help**
+./bifrost.sh --help
 
 Usage: ./bifrost.sh [option]
 

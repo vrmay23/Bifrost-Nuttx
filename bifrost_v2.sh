@@ -517,7 +517,7 @@ flash_pico(){
 
     
 #======================================================#
-#=====               Download openOCD              ====#
+#=====      Install requirements for openOCD       ====#
 #======================================================#
 Install_Pre_Requirements_OPENOCD(){
     REQUIRED_PACKAGES_OPENOCD="automake bison build-essential flex gcc-arm-none-eabi gperf libtool libncurses5-dev libusb-dev libusb-1.0-0-dev pkg-config"
@@ -548,18 +548,27 @@ download_openOCD(){
         echo "Diretório já existe: $TOOLS_DIR"
     fi
 
-    cd "$TOOLS_DIR"                                  # ~/embedded_sys
+    cd "$TOOLS_DIR"  # ~/embedded_sys
 
-    # cloning repo 'OpenOCD' (if it does not exist in this folder) or update it case it already exist
+    # cloning repo 'OpenOCD' (if it does not exist in this folder) or update it if it already exists
     if [ ! -d "openOCD" ]; then
         echo "Cloning toolchain directory: 'openOCD'..."
         if ! git clone https://git.code.sf.net/p/openocd/code openOCD; then
-            echo "Apologize! we ran into an issue while trying to clone 'pico-sdk'."
+            echo "Apologize! we ran into an issue while trying to clone 'openOCD'."
             exit 1
-        fi  
+        fi
+        # <<<=== to solve de jimtcl  submodule ===>>>
+        cd openOCD
+        echo "Initializing git submodules..."
+        git submodule update --init --recursive
+        cd ..
     else
-        echo "it seems 'openOCD' already exist. Let us update it so..."
-        cd openOCD && git pull && cd ..
+        echo "It seems 'openOCD' already exists. Let us update it..."
+        cd openOCD
+        git pull
+        echo "Updating submodules..."
+        git submodule update --init --recursive
+        cd ..
     fi
 
     cd "$OPENOCD_DIR"

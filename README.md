@@ -43,6 +43,56 @@ After setup, your filesystem will look like this:
 You can run the script with multiple flags.  
 Use `--help` to see all available options:
 
+**./bifrost.sh --help**
+
+Usage: ./bifrost.sh [option]
+
+General setup:
+  -pr                  Install all required packages
+  -mf                  Create the base project folder ~/embedded_sys
+
+NuttX core:
+  -nut-tools           Clone nuttx/tools repo
+  -nut-rtos            Clone nuttx kernel repo
+  -nut-apps            Clone nuttx apps repo
+  -nut-sim             Configure NuttX for simulator (sim:nsh)
+  -nut-build           Build NuttX (must be configured first)
+  -nut-clean           Run distclean on NuttX
+  -nut-run             Run NuttX simulator binary
+
+Raspberry Pi Pico:
+  -pico-pr             Install required packages for Pico SDK
+  -pico-tc             Clone pico-sdk toolchain
+  -pico-path           Add pico-sdk path to ~/.bashrc
+  -pico-conf-nuttx     Configure NuttX for Raspberry Pi Pico
+  -pico-build-nuttx    Compile NuttX for Raspberry Pi Pico
+  -pico-flash          Flash .uf2 manually to Pico over USB
+
+ESP32-C3:
+  -esp-riscv-tc        Download and extract RISC-V toolchain
+  -esp-get-bin         Download bootloader and partition binaries
+  -esp-elf2bin         Convert NuttX ELF to .bin using esptool
+  -esp-conf-nuttx      Configure NuttX for ESP32-C3 (esp32c3-devkit)
+  -esp-build-nuttx     Build and convert NuttX for ESP32-C3
+  -esp-flash           Flash ESP32-C3 over serial with esptool
+
+Python & Virtualenv:
+  -py-conf             Configure python3 + alias + pip3
+  -venv-esp            Setup virtualenv for ESP32
+  -venv-esp-act        Activate virtualenv for ESP32
+  -venv-esptool-install Install esptool in ESP32 virtualenv
+
+External tools:
+  -tool-ocd-pr         Install OpenOCD dependencies
+  -tool-ocd-get        Clone and init OpenOCD repo
+  -tool-ocd-build      Build and install OpenOCD
+  -tool-minicom-pr     Install minicom and set user permissions
+
+Other:
+  -festival-pr         Install Festival TTS (optional)
+  -H, --help           Show this help message
+
+
 
 ## 🛠️ Examples
 

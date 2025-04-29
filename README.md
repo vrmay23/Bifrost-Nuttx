@@ -97,7 +97,6 @@ Other:
 
 ## 🛠️ Examples
 
-./setup.sh --help
 
 # configure everything for run the NuttX sim:
 /bifrost.sh -pr -mf -nut-tools -nut-rtos -nut-apps -nut-sim -nut-build -nut-run

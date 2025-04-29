@@ -916,6 +916,63 @@ flash_esp32_c3(){
 
 
 
+#======================================================#
+#=====                 HELP MENU                   ====#
+#======================================================#
+show_help() {
+    echo "Usage: $0 [option]"
+    echo ""
+    echo "General setup:"
+    echo "  -pr                  Install all required packages"
+    echo "  -mf                  Create the base project folder ~/embedded_sys"
+    echo ""
+    echo "NuttX core:"
+    echo "  -nut-tools           Clone nuttx/tools repo"
+    echo "  -nut-rtos            Clone nuttx kernel repo"
+    echo "  -nut-apps            Clone nuttx apps repo"
+    echo "  -nut-sim             Configure NuttX for simulator (sim:nsh)"
+    echo "  -nut-build           Build NuttX (must be configured first)"
+    echo "  -nut-clean           Run distclean on NuttX"
+    echo "  -nut-run             Run NuttX simulator binary"
+    echo ""
+    echo "Raspberry Pi Pico:"
+    echo "  -pico-pr             Install required packages for Pico SDK"
+    echo "  -pico-tc             Clone pico-sdk toolchain"
+    echo "  -pico-path           Add pico-sdk path to ~/.bashrc"
+    echo "  -pico-conf-nuttx     Configure NuttX for Raspberry Pi Pico"
+    echo "  -pico-build-nuttx    Compile NuttX for Raspberry Pi Pico"
+    echo "  -pico-flash          Flash .uf2 manually to Pico over USB"
+    echo ""
+    echo "ESP32-C3:"
+    echo "  -esp-riscv-tc        Download and extract RISC-V toolchain"
+    echo "  -esp-get-bin         Download bootloader and partition binaries"
+    echo "  -esp-elf2bin         Convert NuttX ELF to .bin using esptool"
+    echo "  -esp-conf-nuttx      Configure NuttX for ESP32-C3 (esp32c3-devkit)"
+    echo "  -esp-build-nuttx     Build and convert NuttX for ESP32-C3"
+    echo "  -esp-flash           Flash ESP32-C3 over serial with esptool"
+    echo ""
+    echo "Python & Virtualenv:"
+    echo "  -py-conf             Configure python3 + alias + pip3"
+    echo "  -venv-esp            Setup virtualenv for ESP32"
+    echo "  -venv-esp-act        Activate virtualenv for ESP32"
+    echo "  -venv-esptool-install Install esptool in ESP32 virtualenv"
+    echo ""
+    echo "External tools:"
+    echo "  -tool-ocd-pr         Install OpenOCD dependencies"
+    echo "  -tool-ocd-get        Clone and init OpenOCD repo"
+    echo "  -tool-ocd-build      Build and install OpenOCD"
+    echo "  -tool-minicom-pr     Install minicom and set user permissions"
+    echo ""
+    echo "Other:"
+    echo "  -festival-pr         Install Festival TTS (optional)"
+    echo "  -H, --help           Show this help message"
+    echo ""
+}
+#======================================================#
+
+
+
+
 # Main script logic
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -960,7 +1017,10 @@ while [[ $# -gt 0 ]]; do
         -esp-build-nuttx) compile_nuttx_esp32_c3 ;;
         -esp-flash) flash_esp32_c3 ;;
 
-        *) echo "Opção inválida. Use -H ou --help para ajuda."; exit 1 ;;
+	# HELP MENU
+ 	-H|--help) show_help ; exit 0 ;;
+  
+        *) echo "Invalid option. Use -H or --help for usage." ; exit 1 ;;
     esac
     shift  # Move para a próxima opção
 done

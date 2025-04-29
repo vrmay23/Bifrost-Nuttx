@@ -90,7 +90,6 @@ External tools:
   -tool-minicom-pr     Install minicom and set user permissions
 
 Other:
-  -festival-pr         Install Festival TTS (optional)
   -H, --help           Show this help message
 ```
 

@@ -7,8 +7,8 @@
 # Author:       Vinicius Rodrigo May (vmay23 ~QsiX Embedded Labs~)
 # Date:         2023/05/16
 #
-# rev date:     2025/04/27
-# Rev Reason:   Adding support to kconfig (menuconfig) directly from ubuntu repository
+# rev date:     2025/02/17
+# Rev Reason:   integrating RaspberryPI_Pico to Bifrost automation
 #
 # referencies:  Nuttx Channel (Alan Carvalho de Assis - https://www.youtube.com/@nuttxchannel)
 #               Embarcados TV (Sara Cunha - https://www.youtube.com/watch?v=B3fKhR7tsVM)
@@ -131,7 +131,8 @@ create_project_main_folder(){
     if [ ! -d "$PROJECT_DIR" ]; then                                                                                        
         echo "Creating project folder '$PROJECT_DIR' ..."   
         mkdir -p "$PROJECT_DIR"                                 # ~/embedded_sys
-        mkdir -p "$NUTTXSPACE_DIR"                              # ~/embedded_sys/nuttxspace                                                                         
+        mkdir -p "$NUTTXSPACE_DIR"                              # ~/embedded_sys/nuttxspace   
+        mkdir -p "$TOOLS_DIR"                                   # ~/embedded_sys/tools                                                                  
     else
         while true; do
             show_options
@@ -540,6 +541,13 @@ Install_Pre_Requirements_OPENOCD(){
 #=====               Download openOCD              ====#
 #======================================================#
 download_openOCD(){
+    if [ ! -d "$TOOLS_DIR" ]; then
+        echo "Criando diretório: $TOOLS_DIR"
+        mkdir -p "$TOOLS_DIR"  
+    else
+        echo "Diretório já existe: $TOOLS_DIR"
+    fi
+
     cd "$TOOLS_DIR"                                  # ~/embedded_sys
 
     # cloning repo 'OpenOCD' (if it does not exist in this folder) or update it case it already exist

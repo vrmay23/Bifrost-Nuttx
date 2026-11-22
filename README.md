@@ -4,9 +4,10 @@ This repository contains a full automation script for setting up,
 building and flashing [Apache NuttX RTOS](https://nuttx.apache.org/) on
 the following targets:
 
-- **STM32** (F1, F3, F4, H7, Blue Pill, any OpenOCD target)
+- **STM32** (F1, F3, F4, F7, H7, Blue Pill, any OpenOCD target)
 - **ESP32-C3 / ESP32-C6** (RISC-V)
-- **ESP32 / ESP32-S2 / ESP32-S3** (Xtensa)
+- **ESP32 / ESP32-S2 / ESP32-S3** (Xtensa), including the Waveshare
+  ESP32-S3-Touch-LCD-7
 - **Raspberry Pi Pico** (RP2040) and **Pico 2** (RP2350)
 - **NuttX Simulator** (for PC testing)
 
@@ -195,6 +196,14 @@ Log out and back in once after the first `deps`, so the `dialout` group
 # daily: Nucleo-H743ZI
 ./bifrost.sh conf nucleo-h743zi:nsh build flash-stm32 h7
 
+# from zero: Nucleo-F767ZI
+./bifrost.sh deps src venv tc-arm env \
+  conf nucleo-f767zi:nsh build flash-stm32 f7 elf
+
+# daily: Nucleo-F767ZI (nsh, or netnsh with Ethernet)
+./bifrost.sh conf nucleo-f767zi:nsh build flash-stm32 f7
+./bifrost.sh conf nucleo-f767zi:netnsh build flash-stm32 f7 bin
+
 # daily: STM32F4 Discovery / Nucleo-F446RE
 ./bifrost.sh conf stm32f4discovery:nsh build flash-stm32 f4
 ./bifrost.sh conf nucleo-f446re:nsh build flash-stm32 f4
@@ -244,6 +253,16 @@ STM32_OCD_EXTRA="set CPUTAPID 0x2ba01477" \
 
 # daily: ESP32-S3 DevKit
 ./bifrost.sh conf esp32s3-devkit:nsh build flash-esp /dev/ttyUSB0
+
+# from zero: Waveshare ESP32-S3-Touch-LCD-7 (7" 800x480 panel)
+./bifrost.sh deps src venv tc-xtensa env \
+  conf esp32s3-touch-lcd7:lcd build flash-esp /dev/ttyUSB0
+
+# daily: ESP32-S3-Touch-LCD-7, framebuffer on /dev/fb0 (run "fb" in NSH)
+./bifrost.sh conf esp32s3-touch-lcd7:lcd build flash-esp /dev/ttyUSB0
+
+# daily: ESP32-S3-Touch-LCD-7, NSH over the native USB (CDC/ACM)
+./bifrost.sh conf esp32s3-touch-lcd7:usbnsh build flash-esp /dev/ttyUSB0
 
 # daily: ESP32-S2 Saola-1
 ./bifrost.sh conf esp32s2-saola-1:nsh build flash-esp /dev/ttyUSB0
@@ -344,6 +363,13 @@ or partition table is needed. `make flash` converts the ELF and writes
 ./bifrost.sh flash-esp /dev/ttyUSB0
 ```
 
+ESP32-S3-Touch-LCD-7: flash through the UART connector (USB-to-UART
+bridge); check `dmesg` for its device name (`/dev/ttyUSB0` or
+`/dev/ttyACM0`). With `lcd` the NSH console stays on that same UART
+port. With `usbnsh` the console moves to the native USB connector, which
+shows up as a new `/dev/ttyACM*` (press ENTER three times if the prompt
+does not show).
+
 ### Raspberry Pi Pico
 
 - RP2040: the build needs `PICO_SDK_PATH` (set by `env.sh`) to create
@@ -363,6 +389,7 @@ hold BOOTSEL, plug the board in, copy `nuttx.uf2` to the USB drive.
 | `f1`       | `target/stm32f1x.cfg`              |
 | `f3`       | `target/stm32f3x.cfg`              |
 | `f4`       | `target/stm32f4x.cfg`              |
+| `f7`       | `target/stm32f7x.cfg`              |
 | `h7`       | `target/stm32h7x.cfg` (default)    |
 | `bluepill` | `board/stm32f103c8_blue_pill.cfg`  |
 | `*.cfg`    | used as given, e.g. `target/stm32g4x.cfg` |

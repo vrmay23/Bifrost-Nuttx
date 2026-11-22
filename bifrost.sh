@@ -94,7 +94,16 @@ set -Eeuo pipefail
 # Root directory. Priority: BIFROST_ROOT from the environment, then the
 # root saved by the folder menu ("tree"), then ~/embedded_sys.
 
-BIFROST_CONF="$HOME/.config/bifrost/root"
+# Bifrost state lives outside the root, so "uninstall" can still read
+# it after the root is gone:
+#   root           root folder chosen in the folder menu
+#   apt-installed  apt packages Bifrost itself installed (one per line);
+#                  packages that were already present are never listed,
+#                  so uninstall never removes something you had before
+
+BIFROST_STATE="$HOME/.config/bifrost"
+BIFROST_CONF="$BIFROST_STATE/root"
+BIFROST_APT_LOG="$BIFROST_STATE/apt-installed"
 
 if [[ -z "${BIFROST_ROOT:-}" && -r "$BIFROST_CONF" ]]; then
   BIFROST_ROOT="$(<"$BIFROST_CONF")"
@@ -112,6 +121,7 @@ set_paths()
   TOOLS_DIR="$BIFROST_ROOT/tools"
   VENV_DIR="$BIFROST_ROOT/nuttx_venv"
   ENV_FILE="$BIFROST_ROOT/env.sh"
+  LAST_CONF="$BIFROST_ROOT/.last-conf"   # board:config of the tree
 }
 set_paths
 
@@ -430,7 +440,8 @@ cmd_voice()
 {
   if ! command -v festival >/dev/null 2>&1; then
     log "installing festival"
-    sudo apt-get install -y festival
+    sudo apt-get install -y festival </dev/null
+    record_apt festival
   fi
   say "Hi. I am Haindall. I can speak now."
 }
@@ -457,16 +468,17 @@ greet()
 # Host setup
 #==========================================================================
 
-# deps: install missing apt packages in a single apt call and add the
-# user to "dialout" (serial ports). Group membership only takes effect
-# after logout/login; "newgrp" is not used because it spawns a new shell
-# and blocks the script.
+# deps: install missing apt packages in a single apt call. Serial port
+# access (dialout group) is handled by check_dialout() at start-up.
+#
+# Every apt-get call reads stdin from /dev/null: dpkg otherwise consumes
+# the terminal input meant for the next questions (seen in uninstall).
+# sudo still asks for the password through /dev/tty.
 
 cmd_deps()
 {
-  local missing=() p me
+  local missing=() p
 
-  me="$(id -un)"   # $USER is not always set (containers, cron)
   say "Checking the host packages."
 
   for p in "${APT_PACKAGES[@]}"; do
@@ -476,20 +488,64 @@ cmd_deps()
   if ((${#missing[@]})); then
     say "Installing ${#missing[@]} missing packages."
     log "installing: ${missing[*]}"
-    sudo apt-get update
-    sudo apt-get install -y "${missing[@]}"
+    sudo apt-get update </dev/null
+    sudo apt-get install -y "${missing[@]}" </dev/null
+    record_apt "${missing[@]}"
   else
     say "All host packages are already installed."
   fi
 
-  if ! id -nG "$me" | grep -qw dialout; then
-    sudo usermod -aG dialout "$me"
-    warn "you were added to the dialout group. Log out and back in."
-  fi
 }
 
 #--------------------------------------------------------------------------
-# Folder menu
+# Serial port access
+#
+# /dev/ttyUSB* and /dev/ttyACM* belong to the "dialout" group; without it
+# esptool, picocom and minicom fail with "Permission denied". Two states
+# matter:
+#   - user not in dialout at all (/etc/group): offer to add him
+#   - user added, but this login session predates it: the group only
+#     shows up after a new login. Offer a reboot; if declined, re-run
+#     this same command line under "sg dialout", which grants the group
+#     to this run only. ("newgrp" is not used: it opens a new shell and
+#     blocks the script.) BIFROST_SG marks the re-run, so it can never
+#     loop.
+#--------------------------------------------------------------------------
+
+check_dialout()
+{
+  local me
+
+  me="$(id -un)"   # $USER is not always set (containers, cron)
+  id -nG | grep -qw dialout && return 0
+
+  if ! id -nG "$me" | grep -qw dialout; then
+    if [[ ! -t 0 ]]; then
+      warn "$me is not in the dialout group; serial ports will fail."
+      return 0
+    fi
+    if ! confirm "To use serial ports, $me must be in the dialout \
+group. Add it now?"; then
+      say "Ok. Serial ports will not work until you are in dialout."
+      return 0
+    fi
+    sudo usermod -aG dialout "$me"
+    say "Added $me to the dialout group."
+  fi
+
+  [[ -t 0 && -z "${BIFROST_SG:-}" ]] || return 0
+
+  if confirm "The dialout group needs a new login. Reboot now?"; then
+    speak_sync "Rebooting. See you soon."
+    sudo reboot
+    exit 0
+  fi
+
+  say "Ok. Using the dialout group for this run only."
+  export BIFROST_SG=1
+  voice_wait
+  exec sg dialout -c "$(printf '%q ' "$0" "$@")"
+}
 #
 # Fixes over the original menu:
 #   - "clean" deletes the contents with one rm per top-level entry and
@@ -515,6 +571,16 @@ save_root()
   log "root saved in $BIFROST_CONF"
 }
 
+# record_apt <pkg...>: remember packages installed by Bifrost, for
+# "uninstall". Duplicates are dropped.
+
+record_apt()
+{
+  mkdir -p "$BIFROST_STATE"
+  printf '%s\n' "$@" >> "$BIFROST_APT_LOG"
+  sort -u -o "$BIFROST_APT_LOG" "$BIFROST_APT_LOG"
+}
+
 # root_is_safe: guard for destructive options.
 
 root_is_safe()
@@ -527,18 +593,88 @@ root_is_safe()
 
 show_folder_menu()
 {
-  printf '\n'
-  printf ' The folder %s already exists.\n\n' "$BIFROST_ROOT"
   printf ' 1 - Keep it and use it as it is\n'
   printf ' 2 - Clean everything inside it\n'
   printf ' 3 - Use a new folder in %s\n' "$HOME"
-  printf ' 4 - Rename it to %s_old and start a new one\n\n' \
+  printf ' 4 - Rename it to %s_old and start a new one\n' \
     "$(basename "$BIFROST_ROOT")"
 }
 
+# folder_option <1-4>: run one folder menu option. Shared by "tree" and
+# "--menu". Returns 0 when done, 1 when the user should choose again.
+# Every option ends with the full layout in place.
+
+folder_option()
+{
+  local name new old
+
+  case "$1" in
+    1)
+      say "Ok. Keeping the current folder."
+      ;;
+
+    2)
+      if [[ -d "$BIFROST_ROOT" ]]; then
+        root_is_safe || die "refusing to clean $BIFROST_ROOT"
+        if ! confirm "Delete everything inside $BIFROST_ROOT?"; then
+          say "It seems you are not so sure. Let us try once more."
+          return 1
+        fi
+        say "Ok. Cleaning the whole folder."
+        find "$BIFROST_ROOT" -mindepth 1 -maxdepth 1 \
+          -exec rm -rf -- {} +
+      fi
+      ;;
+
+    3)
+      ask "New folder name (created in $HOME):" name \
+        "Please, tell me the new folder name."
+      if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ \
+            || "$name" == "." || "$name" == ".." ]]; then
+        say "Invalid name. Use letters, numbers, dot, dash or \
+underscore."
+        return 1
+      fi
+      new="$HOME/$name"
+      if [[ -e "$new" ]]; then
+        say "The folder $name already exists. Try another name."
+        return 1
+      fi
+      BIFROST_ROOT="$new"
+      set_paths
+      save_root
+      say "The new folder $name was created."
+      ;;
+
+    4)
+      if [[ -d "$BIFROST_ROOT" ]]; then
+        root_is_safe || die "refusing to rename $BIFROST_ROOT"
+        old="${BIFROST_ROOT}_old"
+        if [[ -e "$old" ]]; then
+          old="${old}_$(date +%Y%m%d_%H%M%S)"
+        fi
+        mv -- "$BIFROST_ROOT" "$old"
+        say "Renamed the old folder to $(basename "$old")."
+      fi
+      ;;
+
+    *)
+      say "Wrong option. Please, try again."
+      return 1
+      ;;
+  esac
+
+  make_tree
+}
+
+# tree: the folder menu only appears when it is needed: the root
+# already exists AND there is a terminal to answer it. A missing root is
+# simply created; without a terminal the existing root is kept. It runs
+# from "tree", "src" and "setup" (or any time from "--menu").
+
 cmd_tree()
 {
-  local opt name new old
+  local opt
 
   if [[ ! -d "$BIFROST_ROOT" ]]; then
     say "Creating the project folder."
@@ -553,69 +689,14 @@ cmd_tree()
   fi
 
   while true; do
+    printf '\n The folder %s already exists.\n\n' "$BIFROST_ROOT"
     show_folder_menu
+    printf '\n'
     say "The project folder already exists."
     ask "Choose an option (1/2/3/4):" opt \
       "Choose one option. One, keep it. Two, clean it. \
 Three, use a new folder. Four, rename it and start a new one."
-
-    case "$opt" in
-      1)
-        say "Ok. Keeping the current folder."
-        make_tree
-        return 0
-        ;;
-
-      2)
-        root_is_safe || die "refusing to clean $BIFROST_ROOT"
-        if confirm "Delete everything inside $BIFROST_ROOT?"; then
-          say "Ok. Cleaning the whole folder."
-          find "$BIFROST_ROOT" -mindepth 1 -maxdepth 1 \
-            -exec rm -rf -- {} +
-          make_tree
-          return 0
-        fi
-        say "It seems you are not so sure. Let us try once more."
-        ;;
-
-      3)
-        ask "New folder name (created in $HOME):" name \
-          "Please, tell me the new folder name."
-        if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ \
-              || "$name" == "." || "$name" == ".." ]]; then
-          say "Invalid name. Use letters, numbers, dot, dash or \
-underscore."
-          continue
-        fi
-        new="$HOME/$name"
-        if [[ -e "$new" ]]; then
-          say "The folder $name already exists. Try another name."
-          continue
-        fi
-        BIFROST_ROOT="$new"
-        set_paths
-        save_root
-        say "The new folder $name was created."
-        make_tree
-        return 0
-        ;;
-
-      4)
-        root_is_safe || die "refusing to rename $BIFROST_ROOT"
-        old="${BIFROST_ROOT}_old"
-        if [[ -e "$old" ]]; then
-          old="${old}_$(date +%Y%m%d_%H%M%S)"
-        fi
-        mv -- "$BIFROST_ROOT" "$old"
-        say "Renamed the old folder to $(basename "$old")."
-        make_tree
-        return 0
-        ;;
-
-      *)
-        say "Wrong option. Please, try again."
-        ;;
-    esac
+    folder_option "$opt" && return 0
   done
 }
 
@@ -849,6 +930,11 @@ cmd_conf()
   nx_run "make distclean >/dev/null 2>&1 || true
           ./tools/configure.sh $(printf '%q' "$cfg")
           make olddefconfig"
+
+  # Remember which board:config is in the tree, so the flash menu can
+  # tell whether the current image matches the chosen board.
+
+  printf '%s\n' "$cfg" > "$LAST_CONF"
 }
 
 cmd_menuconfig()
@@ -907,8 +993,9 @@ cmd_docker_deps()
   me="$(id -un)"
   if ! command -v docker >/dev/null 2>&1; then
     say "Installing Docker."
-    sudo apt-get update
-    sudo apt-get install -y docker.io
+    sudo apt-get update </dev/null
+    sudo apt-get install -y docker.io </dev/null
+    record_apt docker.io
   else
     say "Docker is already installed."
   fi
@@ -1000,6 +1087,7 @@ stm32_target()
     f1)       echo "target/stm32f1x.cfg" ;;
     f3)       echo "target/stm32f3x.cfg" ;;
     f4)       echo "target/stm32f4x.cfg" ;;
+    f7)       echo "target/stm32f7x.cfg" ;;
     h7)       echo "target/stm32h7x.cfg" ;;
     bluepill) echo "board/stm32f103c8_blue_pill.cfg" ;;
     *.cfg)    echo "$1" ;;
@@ -1068,7 +1156,7 @@ cmd_flash_stm32()
   need openocd
   in_nuttx
   target="$(stm32_target "$chip")" \
-    || die "unknown STM32 chip '$chip' (f1 f3 f4 h7 bluepill or .cfg)"
+    || die "unknown STM32 chip '$chip' (f1 f3 f4 f7 h7 bluepill or .cfg)"
   stm32_pick_mode
 
   if [[ "$chip" == "h7" && "$STM32_DUAL_BANK" == "1" ]]; then
@@ -1100,6 +1188,266 @@ from the $STM32_FLASH_MODE image."
 }
 
 #==========================================================================
+# Interactive menu (--menu)
+#
+# Two parts:
+#   1-4  folder options, the same ones "tree" offers
+#   5..  flash only: one entry per board preset below
+#
+# Flash only never flashes a mismatched image: it compares the chosen
+# board:config with the one the tree was last configured for
+# ($LAST_CONF, written by "conf"). On mismatch, or with no image yet,
+# it offers to configure and build first.
+#==========================================================================
+
+# Board presets: "label|board:config|flasher [chip]". The flasher is
+# stm32 (with the flash-stm32 chip), esp or pico. Add a board here and
+# it shows up in the menu.
+
+BOARD_PRESETS=(
+  "Nucleo-H753ZI (ODIN)|nucleo-h753zi:nsh|stm32 h7"
+  "Nucleo-H743ZI|nucleo-h743zi:nsh|stm32 h7"
+  "Nucleo-F767ZI|nucleo-f767zi:nsh|stm32 f7"
+  "STM32F4 Discovery|stm32f4discovery:nsh|stm32 f4"
+  "Nucleo-F446RE|nucleo-f446re:nsh|stm32 f4"
+  "STM32F3 Discovery|stm32f3discovery:nsh|stm32 f3"
+  "Nucleo-F303RE|nucleo-f303re:nsh|stm32 f3"
+  "Blue Pill (STM32F103C8)|stm32f103-minimum:nsh|stm32 bluepill"
+  "ESP32-C3 DevKit|esp32c3-devkit:nsh|esp"
+  "ESP32-C6 DevKitC|esp32c6-devkitc:nsh|esp"
+  "ESP32-S3 DevKit|esp32s3-devkit:nsh|esp"
+  "ESP32-S3-Touch-LCD-7, lcd|esp32s3-touch-lcd7:lcd|esp"
+  "ESP32-S3-Touch-LCD-7, usbnsh|esp32s3-touch-lcd7:usbnsh|esp"
+  "ESP32-S2 Saola-1|esp32s2-saola-1:nsh|esp"
+  "ESP32 DevKitC|esp32-devkitc:nsh|esp"
+  "Raspberry Pi Pico|raspberrypi-pico:nsh|pico"
+  "Raspberry Pi Pico W|raspberrypi-pico-w:nsh|pico"
+  "Raspberry Pi Pico 2|raspberrypi-pico-2:nsh|pico"
+)
+
+MENU_FIRST_BOARD=5
+
+# image_ready <flasher>: the build output that flasher needs exists.
+
+image_ready()
+{
+  case "$1" in
+    stm32) [[ -f "$NUTTX_DIR/nuttx" ]] ;;
+    esp)   [[ -f "$NUTTX_DIR/nuttx.bin" ]] ;;
+    pico)  [[ -f "$NUTTX_DIR/nuttx.uf2" ]] ;;
+  esac
+}
+
+# default_port: first serial port that exists (CH343/CP210x boards
+# show up as ttyACM or ttyUSB), or the ESP_PORT default.
+
+default_port()
+{
+  local p
+
+  for p in /dev/ttyACM0 /dev/ttyUSB0 /dev/ttyACM1 /dev/ttyUSB1; do
+    [[ -e "$p" ]] && { echo "$p"; return; }
+  done
+  echo "$ESP_PORT"
+}
+
+# menu_flash <preset index>: flash one preset, building first if the
+# tree holds another board or no image.
+
+menu_flash()
+{
+  local label cfg flasher chip last port
+
+  IFS='|' read -r label cfg flasher <<< "${BOARD_PRESETS[$1]}"
+  read -r flasher chip <<< "$flasher"
+  [[ -d "$NUTTX_DIR" ]] || { say "Nuttx is not downloaded yet."; return; }
+
+  last="$(cat "$LAST_CONF" 2>/dev/null || true)"
+  if [[ "$last" != "$cfg" ]] || ! image_ready "$flasher"; then
+    printf '\n Tree configured for: %s\n Chosen board:        %s\n\n' \
+      "${last:-unknown}" "$cfg"
+    if ! confirm "The current image is not for $label. Configure and \
+build it now?"; then
+      say "Ok. Nothing was flashed."
+      return
+    fi
+    cmd_conf "$cfg"
+    cmd_build
+  fi
+
+  case "$flasher" in
+    stm32)
+      cmd_flash_stm32 "$chip"
+      ;;
+    esp)
+      port="$(default_port)"
+      ask "Serial port [$port]:" port "Which serial port? Press enter \
+for the default."
+      cmd_flash_esp "${port:-$(default_port)}"
+      ;;
+    pico)
+      cmd_flash_pico
+      ;;
+  esac
+}
+
+show_main_menu()
+{
+  local i n=$MENU_FIRST_BOARD label
+
+  printf '\n Project folder: %s\n\n' "$BIFROST_ROOT"
+  show_folder_menu
+  printf '\n Flash only (builds first if the image is for another '
+  printf 'board):\n'
+  for i in "${!BOARD_PRESETS[@]}"; do
+    label="${BOARD_PRESETS[$i]%%|*}"
+    printf ' %2d - %s\n' "$n" "$label"
+    n=$((n + 1))
+  done
+  printf '\n  0 - Exit\n\n'
+}
+
+cmd_menu()
+{
+  local opt rc last=$((MENU_FIRST_BOARD + ${#BOARD_PRESETS[@]} - 1))
+
+  [[ -t 0 ]] || die "--menu needs a terminal"
+
+  while true; do
+    show_main_menu
+    ask "Choose an option (0-$last):" opt "Choose an option."
+
+    if [[ "$opt" == "0" ]]; then
+      say "Leaving the menu."
+      return 0
+    elif [[ "$opt" =~ ^[1-4]$ ]]; then
+      folder_option "$opt" || true
+    elif [[ "$opt" =~ ^[0-9]+$ ]] && ((opt >= MENU_FIRST_BOARD \
+         && opt <= last)); then
+      # Subshell: a failed build/flash (die, set -e) ends only this
+      # entry, not the menu. The parent turns errexit off to survive
+      # the failure; the subshell turns it back on for itself (inside
+      # an "if" or "||" bash would silently ignore it instead).
+      set +e
+      (set -e; menu_flash $((opt - MENU_FIRST_BOARD)))
+      rc=$?
+      set -e
+      ((rc == 0)) || say "That step failed. Back to the menu."
+    else
+      say "Wrong option. Please, try again."
+    fi
+  done
+}
+
+#==========================================================================
+# Uninstall
+#
+# Undoes everything Bifrost did, one confirmed step at a time:
+#   1. root folder: toolchains, venv, tools, env.sh; the NuttX sources
+#      (nuttx/, apps/) are asked separately, they may hold your work
+#   2. the env.sh line "rc" added to ~/.bashrc (backup kept)
+#   3. the NuttX CI Docker image
+#   4. apt packages Bifrost installed (from the apt-installed record;
+#      anything you already had is never touched)
+#   5. dialout / docker group membership (default: keep, other tools
+#      may rely on it)
+#   6. Bifrost state in ~/.config/bifrost
+# Needs a terminal: nothing is ever deleted without an answer.
+#==========================================================================
+
+uninstall_root()
+{
+  [[ -d "$BIFROST_ROOT" ]] || { log "no $BIFROST_ROOT, skipping"; return; }
+  root_is_safe || die "refusing to delete $BIFROST_ROOT"
+
+  confirm "Delete toolchains, tools and the venv in $BIFROST_ROOT?" \
+    || { say "Keeping the project folder."; return; }
+
+  if confirm "Delete the Nuttx sources too? Local changes in nuttx and \
+apps will be lost."; then
+    say "Deleting the whole project folder."
+    rm -rf -- "$BIFROST_ROOT"
+  else
+    say "Deleting everything except the Nuttx sources."
+    find "$BIFROST_ROOT" -mindepth 1 -maxdepth 1 ! -name nuttxspace \
+      -exec rm -rf -- {} +
+  fi
+}
+
+uninstall_rc()
+{
+  local line=". \"$ENV_FILE\"" rc="$HOME/.bashrc"
+
+  grep -qxF "$line" "$rc" 2>/dev/null || return 0
+  confirm "Remove the Bifrost line from your bashrc?" || return 0
+
+  cp -- "$rc" "$rc.bifrost.bak"
+  grep -vxF -e "$line" -e "# Bifrost NuttX environment" \
+    "$rc.bifrost.bak" > "$rc" || true
+  say "Removed. A backup is in bashrc dot bifrost dot bak."
+}
+
+uninstall_docker_image()
+{
+  command -v docker >/dev/null 2>&1 || return 0
+  docker image inspect "$DOCKER_IMAGE" >/dev/null 2>&1 || return 0
+  confirm "Delete the Nuttx CI Docker image?" || return 0
+  docker rmi "$DOCKER_IMAGE"
+}
+
+uninstall_apt()
+{
+  local pkgs=()
+
+  [[ -s "$BIFROST_APT_LOG" ]] || {
+    log "no record of apt packages installed by Bifrost"
+    return 0
+  }
+  mapfile -t pkgs < "$BIFROST_APT_LOG"
+
+  printf '\n Packages installed by Bifrost:\n  %s\n\n' "${pkgs[*]}"
+  if confirm "Remove these ${#pkgs[@]} packages?"; then
+    say "Removing the packages."
+    sudo apt-get remove -y "${pkgs[@]}" </dev/null
+    rm -f -- "$BIFROST_APT_LOG"
+    log "unused dependencies: sudo apt-get autoremove"
+  fi
+}
+
+uninstall_groups()
+{
+  local me g
+
+  me="$(id -un)"
+  for g in dialout docker; do
+    id -nG "$me" | grep -qw "$g" || continue
+    if confirm "Remove $me from the $g group? Other tools may need it."
+    then
+      sudo gpasswd -d "$me" "$g"
+    fi
+  done
+}
+
+cmd_uninstall()
+{
+  [[ -t 0 ]] || die "uninstall needs a terminal to confirm each step"
+
+  say "Uninstall. I will ask before each step."
+  uninstall_root
+  uninstall_rc
+  uninstall_docker_image
+  uninstall_apt
+  uninstall_groups
+
+  if [[ -d "$BIFROST_STATE" ]] \
+     && confirm "Forget the saved Bifrost settings?"; then
+    rm -rf -- "$BIFROST_STATE"
+  fi
+
+  say "Uninstall complete."
+}
+
+#==========================================================================
 # Meta
 #==========================================================================
 
@@ -1127,7 +1475,7 @@ Haindall speaks every step (festival). Silence him: BIFROST_VOICE=0
 
 Host setup:
   voice                install festival only (Haindall's voice)
-  deps                 install apt packages, add user to dialout
+  deps                 install missing apt packages
   tree                 create layout; menu if the folder already exists
   src                  clone/update nuttx and nuttx-apps
   venv                 create venv with kconfiglib and esptool
@@ -1154,6 +1502,12 @@ Docker (NuttX CI image, every toolchain included):
   docker-shell         interactive shell in the container, inside nuttx/
   flash-stm32 and flash-pico always run on the host (OpenOCD, picotool)
 
+Menu:
+  --menu, menu         folder options and flash-only for every board
+
+Uninstall:
+  uninstall            remove what Bifrost installed (asks each step)
+
 Environment:
   env                  (re)write $ENV_FILE
   rc                   source env.sh from ~/.bashrc
@@ -1170,8 +1524,8 @@ Flash:
   flash-esp [port]     ESP32 family via esptool (default $ESP_PORT)
   flash-pico           RP2040/RP2350 via picotool or BOOTSEL
   flash-stm32 [chip] [elf|bin]
-                       STM32 via OpenOCD + ST-Link; chip: f1 f3 f4 h7
-                       bluepill or any .cfg (default $STM32_CHIP);
+                       STM32 via OpenOCD + ST-Link; chip: f1 f3 f4 f7
+                       h7 bluepill or any .cfg (default $STM32_CHIP);
                        no format given: asks (terminal) or uses elf
 
 Examples:
@@ -1199,7 +1553,7 @@ EOF
 COMMANDS=" voice deps tree src venv setup tc-arm tc-riscv tc-xtensa
   tc-all pico-sdk picotool ocd-esp env rc conf menuconfig build
   rebuild clean sim flash-esp flash-pico flash-stm32 docker docker-deps
-  docker-pull docker-shell help "
+  docker-pull docker-shell uninstall menu --menu help "
 
 is_command()
 {
@@ -1216,7 +1570,12 @@ main()
     -h|--help|help) cmd_help; exit 0 ;;
   esac
 
-  greet
+  if [[ -z "${BIFROST_SG:-}" ]]; then
+    greet
+  fi
+  # Serial access is irrelevant when removing everything.
+
+  [[ "$1" == "uninstall" ]] || check_dialout "$@"
 
   while (($#)); do
     cmd="$1"
@@ -1260,6 +1619,8 @@ main()
       docker-deps)    cmd_docker_deps ;;
       docker-pull)    cmd_docker_pull ;;
       docker-shell)   cmd_docker_shell ;;
+      uninstall)      cmd_uninstall ;;
+      menu|--menu)    cmd_menu ;;
       env)            cmd_env ;;
       rc)             cmd_rc ;;
       conf)           cmd_conf "$arg" ;;

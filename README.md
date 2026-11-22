@@ -256,13 +256,13 @@ STM32_OCD_EXTRA="set CPUTAPID 0x2ba01477" \
 
 # from zero: Waveshare ESP32-S3-Touch-LCD-7 (7" 800x480 panel)
 ./bifrost.sh deps src venv tc-xtensa env \
-  conf esp32s3-touch-lcd7:lcd build flash-esp /dev/ttyUSB0
+  conf esp32s3-touch-lcd7:lcd build flash-esp /dev/ttyACM0
 
 # daily: ESP32-S3-Touch-LCD-7, framebuffer on /dev/fb0 (run "fb" in NSH)
-./bifrost.sh conf esp32s3-touch-lcd7:lcd build flash-esp /dev/ttyUSB0
+./bifrost.sh conf esp32s3-touch-lcd7:lcd build flash-esp /dev/ttyACM0
 
 # daily: ESP32-S3-Touch-LCD-7, NSH over the native USB (CDC/ACM)
-./bifrost.sh conf esp32s3-touch-lcd7:usbnsh build flash-esp /dev/ttyUSB0
+./bifrost.sh conf esp32s3-touch-lcd7:usbnsh build flash-esp /dev/ttyACM0
 
 # daily: ESP32-S2 Saola-1
 ./bifrost.sh conf esp32s2-saola-1:nsh build flash-esp /dev/ttyUSB0
@@ -363,11 +363,13 @@ or partition table is needed. `make flash` converts the ELF and writes
 ./bifrost.sh flash-esp /dev/ttyUSB0
 ```
 
-ESP32-S3-Touch-LCD-7: flash through the UART connector (USB-to-UART
-bridge); check `dmesg` for its device name (`/dev/ttyUSB0` or
-`/dev/ttyACM0`). With `lcd` the NSH console stays on that same UART
-port. With `usbnsh` the console moves to the native USB connector, which
-shows up as a new `/dev/ttyACM*` (press ENTER three times if the prompt
+ESP32-S3-Touch-LCD-7 (VER1.1): flash through the USB-C connector
+labeled `USB`. It goes through a WCH CH343 USB-to-UART bridge
+(`1a86:55d3` in `dmesg`) wired to UART0, and the CH343 is a CDC/ACM
+device, so it shows up as `/dev/ttyACM0`, not `/dev/ttyUSB0`.
+With the `lcd` configuration the NSH console is on that same port
+(115200 8N1). With `usbnsh` the console moves to the ESP32-S3 native
+USB, a second CDC/ACM device (press ENTER three times if the prompt
 does not show).
 
 ### Raspberry Pi Pico

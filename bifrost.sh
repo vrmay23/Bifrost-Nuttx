@@ -535,7 +535,8 @@ group. Add it now?"; then
 
   [[ -t 0 && -z "${BIFROST_SG:-}" ]] || return 0
 
-  if confirm "The dialout group needs a new login. Reboot now?"; then
+  if confirm "The dialout group needs a new login (log out and in, or \
+reboot). Reboot now?"; then
     speak_sync "Rebooting. See you soon."
     sudo reboot
     exit 0
@@ -1560,6 +1561,43 @@ is_command()
   [[ "$COMMANDS" =~ [[:space:]]"$1"[[:space:]] ]]
 }
 
+# validate_args: every word must be a command, or the argument of a
+# command that takes one (conf, flash-esp, flash-stm32 x2). Same rules
+# as the parser in main().
+
+validate_args()
+{
+  local w max=0
+
+  for w in "$@"; do
+    if is_command "$w"; then
+      case "$w" in
+        conf|flash-esp) max=1 ;;
+        flash-stm32)    max=2 ;;
+        *)              max=0 ;;
+      esac
+    elif ((max > 0)); then
+      max=$((max - 1))
+    else
+      die "unknown command '$w' (see 'help')"
+    fi
+  done
+}
+
+# needs_serial: true when a command on the line opens a serial port.
+
+needs_serial()
+{
+  local w
+
+  for w in "$@"; do
+    case "$w" in
+      flash-esp|menu|--menu) return 0 ;;
+    esac
+  done
+  return 1
+}
+
 main()
 {
   local cmd arg arg2
@@ -1570,12 +1608,21 @@ main()
     -h|--help|help) cmd_help; exit 0 ;;
   esac
 
+  # Validate the whole command line before greeting or asking anything,
+  # so a typo ("unistall") fails at once instead of after questions.
+
+  validate_args "$@"
+
   if [[ -z "${BIFROST_SG:-}" ]]; then
     greet
   fi
-  # Serial access is irrelevant when removing everything.
 
-  [[ "$1" == "uninstall" ]] || check_dialout "$@"
+  # Only serial-port commands need the dialout group. ST-Link (OpenOCD)
+  # and picotool talk to USB directly and do not depend on it.
+
+  if needs_serial "$@"; then
+    check_dialout "$@"
+  fi
 
   while (($#)); do
     cmd="$1"

@@ -22,7 +22,10 @@ Author: Vinicius Rodrigo May (@vrmay23) - QsiX Embedded Labs
 ## 🔧 What the script does
 
 - Installs all required Linux packages (one apt call, only what is
-  missing) and adds you to the `dialout` group
+  missing)
+- Checks serial port access (`dialout` group) at every start and offers
+  to add you and reboot
+- Removes everything it installed with `uninstall`, asking at each step
 - Creates the `~/embedded_sys` workspace, with an interactive menu when
   it already exists
 - Clones or updates the official NuttX kernel and apps repositories
@@ -86,7 +89,7 @@ Haindall speaks every step (festival). Silence him: BIFROST_VOICE=0
 
 Host setup:
   voice                install festival only (Haindall's voice)
-  deps                 install apt packages, add user to dialout
+  deps                 install missing apt packages
   tree                 create layout; menu if the folder already exists
   src                  clone/update nuttx and nuttx-apps
   venv                 create venv with kconfiglib and esptool
@@ -113,6 +116,12 @@ Docker (NuttX CI image, every toolchain included):
   docker-shell         interactive shell in the container, inside nuttx/
   flash-stm32 and flash-pico always run on the host (OpenOCD, picotool)
 
+Menu:
+  --menu, menu         folder options and flash-only for every board
+
+Uninstall:
+  uninstall            remove what Bifrost installed (asks each step)
+
 Environment:
   env                  (re)write ~/embedded_sys/env.sh
   rc                   source env.sh from ~/.bashrc
@@ -129,8 +138,8 @@ Flash:
   flash-esp [port]     ESP32 family via esptool (default /dev/ttyUSB0)
   flash-pico           RP2040/RP2350 via picotool or BOOTSEL
   flash-stm32 [chip] [elf|bin]
-                       STM32 via OpenOCD + ST-Link; chip: f1 f3 f4 h7
-                       bluepill or any .cfg (default h7);
+                       STM32 via OpenOCD + ST-Link; chip: f1 f3 f4 f7
+                       h7 bluepill or any .cfg (default h7);
                        no format given: asks (terminal) or uses elf
 
 Examples:
@@ -144,7 +153,6 @@ Examples:
   bifrost.sh conf esp32s3-devkit:nsh build flash-esp
   bifrost.sh conf raspberrypi-pico:nsh build flash-pico
   bifrost.sh conf raspberrypi-pico-2:nsh build flash-pico
-
 ```
 
 ---
@@ -158,8 +166,10 @@ a flashed board. Each target below has two forms:
   builds and flashes
 - **daily**: everything already installed, just configure, build, flash
 
-Log out and back in once after the first `deps`, so the `dialout` group
-(serial ports) takes effect. Serial console after flashing:
+Serial ports need the `dialout` group. Every run checks it first: if you
+are not in the group, Haindall offers to add you; if the group is not
+active yet in this login, he offers to reboot, or runs the command with
+the group for this run only (`sg dialout`). Serial console after flashing:
 `picocom -b 115200 /dev/ttyACM0` (or `minicom`).
 
 ### Everything at once
@@ -425,10 +435,36 @@ The old `CLEAN_FLASH_STM32H7` alias becomes:
 ./bifrost.sh rebuild flash-stm32 h7 bin
 ```
 
+## Interactive menu
+
+```sh
+./bifrost.sh --menu
+```
+
+One screen with two parts:
+
+- **1-4, folder**: the same options as the folder menu below (keep,
+  clean, new folder, rename).
+- **5 and up, flash only**: one entry per board preset (STM32, ESP32,
+  Pico; the same boards as in Examples). The tree remembers which
+  `board:config` it was last configured for (`.last-conf` in the root).
+  If the chosen board does not match, or there is no image yet, Haindall
+  offers to configure and build it first, so a wrong image is never
+  flashed. ESP boards ask for the serial port (default: the first
+  `/dev/ttyACM*` / `/dev/ttyUSB*` found); STM32 boards ask `elf` or
+  `bin`.
+
+A failed build or flash returns to the menu instead of ending the
+script. `0` exits. New boards are added to the `BOARD_PRESETS` list in
+`bifrost.sh`.
+
 ## Folder menu
 
-When the root folder already exists, `tree` (also called by `src` and
-`setup`) asks what to do:
+The folder menu appears only when it is needed: the root folder already
+exists **and** the command touches it (`tree`, `src`, `setup`) **and**
+there is a terminal to answer. `conf`, `build` and the flash commands
+never show it. `--menu` shows it at any time. When it appears, it asks
+what to do:
 
 1. Keep it and use it as it is
 2. Clean everything inside it (asks for confirmation; refuses `/` and
@@ -470,6 +506,28 @@ BIFROST_DOCKER=1 ./bifrost.sh conf sim:nsh build
 - The container runs with your UID/GID: no root-owned files.
 - `flash-esp` passes the serial device into the container.
 - `flash-stm32` and `flash-pico` always run on the host.
+
+## Uninstall
+
+```sh
+./bifrost.sh uninstall
+```
+
+Undoes everything Bifrost did, asking before each step:
+
+1. Toolchains, tools, venv and `env.sh` in the root folder. The NuttX
+   sources (`nuttx/`, `apps/`) are asked separately, because they may
+   hold your work.
+2. The `env.sh` line added to `~/.bashrc` by `rc` (a backup is kept in
+   `~/.bashrc.bifrost.bak`).
+3. The NuttX CI Docker image.
+4. apt packages. Only the ones Bifrost itself installed are listed
+   (recorded in `~/.config/bifrost/apt-installed`); packages you already
+   had before are never removed.
+5. `dialout` / `docker` group membership (default answer: keep).
+6. Bifrost settings in `~/.config/bifrost`.
+
+It needs a terminal: nothing is deleted without an answer.
 
 ## Environment variables
 

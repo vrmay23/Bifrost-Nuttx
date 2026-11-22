@@ -71,7 +71,7 @@
 #       openocd-esp32/
 #       picotool/
 #       pico-sdk/
-#     venv/                            kconfiglib + esptool
+#     nuttx_venv/                      kconfiglib + esptool
 #
 # Usage: see "bifrost.sh help". Commands can be chained, e.g.:
 #   ./bifrost.sh deps src venv tc-arm env
@@ -110,7 +110,7 @@ set_paths()
   NUTTX_DIR="$NUTTXSPACE_DIR/nuttx"
   APPS_DIR="$NUTTXSPACE_DIR/apps"
   TOOLS_DIR="$BIFROST_ROOT/tools"
-  VENV_DIR="$BIFROST_ROOT/venv"
+  VENV_DIR="$BIFROST_ROOT/nuttx_venv"
   ENV_FILE="$BIFROST_ROOT/env.sh"
 }
 set_paths
@@ -757,9 +757,9 @@ if [ -d "$BIFROST_ROOT/tools/pico-sdk" ]; then
   export PICO_SDK_PATH="$BIFROST_ROOT/tools/pico-sdk"
 fi
 
-if [ -f "$BIFROST_ROOT/venv/bin/activate" ] && [ -z "${VIRTUAL_ENV:-}" ]
+if [ -f "$BIFROST_ROOT/nuttx_venv/bin/activate" ] && [ -z "${VIRTUAL_ENV:-}" ]
 then
-  . "$BIFROST_ROOT/venv/bin/activate"
+  . "$BIFROST_ROOT/nuttx_venv/bin/activate"
 fi
 EOF
 
@@ -1150,7 +1150,7 @@ Docker (NuttX CI image, every toolchain included):
   docker               run the following NuttX commands in the container
                        (conf menuconfig build rebuild clean sim flash-esp)
   docker-deps          install Docker, add user to the docker group
-  docker-pull          download $DOCKER_IMAGE
+  docker-pull          download the NuttX CI image (DOCKER_IMAGE)
   docker-shell         interactive shell in the container, inside nuttx/
   flash-stm32 and flash-pico always run on the host (OpenOCD, picotool)
 

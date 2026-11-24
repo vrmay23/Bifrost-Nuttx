@@ -92,7 +92,8 @@ Host setup:
   deps                 install missing apt packages
   tree                 create layout; menu if the folder already exists
   src                  clone/update nuttx and nuttx-apps
-  venv                 create venv with kconfiglib and esptool
+  venv                 create venv, install what is missing (offline ok)
+  venv-upgrade         upgrade pip, kconfiglib and esptool in the venv
   setup                deps + src + venv + all toolchains + pico tools
 
 Toolchains:
@@ -182,6 +183,60 @@ the group for this run only (`sg dialout`). Serial console after flashing:
 . ~/embedded_sys/env.sh
 ./bifrost.sh rc
 ```
+
+### Daily workflow: change the configuration, then flash
+
+Two stand-alone steps. Every `./bifrost.sh` command loads `env.sh` by
+itself, so no environment step is needed:
+
+```sh
+# 1. whenever needed: change and save the configuration
+./bifrost.sh menuconfig
+
+# 2. flash
+./bifrost.sh flash-esp /dev/ttyACM0      # ESP32 family
+./bifrost.sh build flash-stm32 h7        # STM32
+./bifrost.sh build flash-pico            # Raspberry Pi Pico
+```
+
+ESP32: `flash-esp` runs `make flash`, which first rebuilds whatever
+changed, so flashing right after `menuconfig` is enough.
+
+STM32 and Pico: the flash commands only write the image that already
+exists, so `build` must come first after a `menuconfig`.
+
+The same flow with `make` typed by hand (see the next section for
+`env.sh`):
+
+```sh
+. ~/embedded_sys/env.sh       # once per terminal (not needed after rc)
+cd ~/embedded_sys/nuttxspace/nuttx
+make menuconfig
+make flash ESPTOOL_PORT=/dev/ttyACM0 ESPTOOL_BINDIR=./
+```
+
+### Running make by hand
+
+`./bifrost.sh` loads `env.sh` by itself. A plain `make` typed inside
+`nuttx/` does not: without it the cross compiler is not on `PATH`, so
+`make menuconfig` prints `xtensa-esp32s3-elf-gcc: command not found`
+(or the ARM / RISC-V equivalent) when it opens and closes, and `make`
+fails with `failed: 127`. Load the environment first:
+
+```sh
+# once: every new terminal loads env.sh from ~/.bashrc
+./bifrost.sh rc
+
+# the terminal that is already open
+. ~/embedded_sys/env.sh
+
+cd ~/embedded_sys/nuttxspace/nuttx
+make menuconfig
+make -j"$(nproc)"
+```
+
+The leading `.` (same as `source`) runs `env.sh` in the current shell,
+so the `PATH` change stays.
 
 ### NuttX simulator (no board, host GCC)
 
@@ -330,8 +385,10 @@ Without it, Haindall guides the drag-and-drop copy of `nuttx.uf2`.
 ### Other useful commands
 
 ```sh
-# change the configuration of the current board
+# change the configuration of the current board, build and flash
 ./bifrost.sh menuconfig build
+./bifrost.sh menuconfig build flash-esp /dev/ttyACM0
+./bifrost.sh menuconfig build flash-stm32 h7
 
 # remove configuration and binaries
 ./bifrost.sh clean
@@ -447,10 +504,13 @@ One screen with two parts:
   clean, new folder, rename).
 - **5 and up, flash only**: one entry per board preset (STM32, ESP32,
   Pico; the same boards as in Examples). The tree remembers which
-  `board:config` it was last configured for (`.last-conf` in the root).
-  If the chosen board does not match, or there is no image yet, Haindall
-  offers to configure and build it first, so a wrong image is never
-  flashed. ESP boards ask for the serial port (default: the first
+  `board:config` it was last configured for (`.last-conf` in the root):
+  - same board, image present: flash only, nothing else runs
+  - same board, no image (leaving `menuconfig` with changes runs
+    `make clean`): Haindall offers to **build only**, keeping `.config`
+    and every `menuconfig` change
+  - another board: Haindall offers `conf` + build and warns first that
+    this resets `.config` to the board defconfig ESP boards ask for the serial port (default: the first
   `/dev/ttyACM*` / `/dev/ttyUSB*` found); STM32 boards ask `elf` or
   `bin`.
 

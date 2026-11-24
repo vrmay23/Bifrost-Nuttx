@@ -728,7 +728,21 @@ cmd_venv()
     python3 -m venv "$VENV_DIR"
   fi
 
-  say "Installing kconfiglib and esptool."
+  # No --upgrade: pip checks the installed packages first and only goes
+  # to the network for what is missing or does not match the pin. A
+  # re-run with everything in place works offline. Use "venv-upgrade"
+  # to pull newer versions on purpose.
+
+  say "Checking kconfiglib and esptool."
+  "$VENV_DIR/bin/python" -m pip install "${PIP_PACKAGES[@]}"
+}
+
+# venv-upgrade: upgrade pip, kconfiglib and esptool (within the pin).
+
+cmd_venv_upgrade()
+{
+  [[ -x "$VENV_DIR/bin/python" ]] || cmd_venv
+  say "Upgrading pip, kconfiglib and esptool."
   "$VENV_DIR/bin/python" -m pip install --upgrade pip
   "$VENV_DIR/bin/python" -m pip install --upgrade "${PIP_PACKAGES[@]}"
 }
@@ -1197,8 +1211,8 @@ from the $STM32_FLASH_MODE image."
 #
 # Flash only never flashes a mismatched image: it compares the chosen
 # board:config with the one the tree was last configured for
-# ($LAST_CONF, written by "conf"). On mismatch, or with no image yet,
-# it offers to configure and build first.
+# ($LAST_CONF, written by "conf"). Same board without an image: build
+# only, keeping .config. Other board: conf + build, after a warning.
 #==========================================================================
 
 # Board presets: "label|board:config|flasher [chip]". The flasher is
@@ -1264,11 +1278,33 @@ menu_flash()
   [[ -d "$NUTTX_DIR" ]] || { say "Nuttx is not downloaded yet."; return; }
 
   last="$(cat "$LAST_CONF" 2>/dev/null || true)"
-  if [[ "$last" != "$cfg" ]] || ! image_ready "$flasher"; then
+
+  # Three cases, from the least to the most destructive:
+  #   same board, image present -> flash only, nothing else runs
+  #   same board, no image      -> build only; .config (and every
+  #                                menuconfig change) is kept. Leaving
+  #                                menuconfig with changes runs
+  #                                "make clean", which removes the image
+  #   other board / unknown     -> conf + build, which RESETS .config
+  #                                to the board defconfig; said so
+  #                                explicitly before asking
+
+  if [[ "$last" == "$cfg" ]]; then
+    if ! image_ready "$flasher"; then
+      say "There is no image yet for $label."
+      if ! confirm "Build it now, keeping your current configuration?"
+      then
+        say "Ok. Nothing was flashed."
+        return
+      fi
+      cmd_build
+    fi
+  else
     printf '\n Tree configured for: %s\n Chosen board:        %s\n\n' \
       "${last:-unknown}" "$cfg"
-    if ! confirm "The current image is not for $label. Configure and \
-build it now?"; then
+    say "The tree is configured for another board."
+    if ! confirm "Configure for $label and build? This resets the \
+configuration; menuconfig changes are lost."; then
       say "Ok. Nothing was flashed."
       return
     fi
@@ -1479,7 +1515,8 @@ Host setup:
   deps                 install missing apt packages
   tree                 create layout; menu if the folder already exists
   src                  clone/update nuttx and nuttx-apps
-  venv                 create venv with kconfiglib and esptool
+  venv                 create venv, install what is missing (offline ok)
+  venv-upgrade         upgrade pip, kconfiglib and esptool in the venv
   setup                deps + src + venv + all toolchains + pico tools
 
 Toolchains:
@@ -1551,8 +1588,8 @@ EOF
 # "flash-esp build" does not treat "build" as a port.
 #==========================================================================
 
-COMMANDS=" voice deps tree src venv setup tc-arm tc-riscv tc-xtensa
-  tc-all pico-sdk picotool ocd-esp env rc conf menuconfig build
+COMMANDS=" voice deps tree src venv venv-upgrade setup tc-arm tc-riscv
+  tc-xtensa tc-all pico-sdk picotool ocd-esp env rc conf menuconfig build
   rebuild clean sim flash-esp flash-pico flash-stm32 docker docker-deps
   docker-pull docker-shell uninstall menu --menu help "
 
@@ -1654,6 +1691,7 @@ main()
       tree)           cmd_tree ;;
       src)            cmd_src ;;
       venv)           cmd_venv ;;
+      venv-upgrade)   cmd_venv_upgrade ;;
       setup)          cmd_setup ;;
       tc-arm)         cmd_tc_arm ;;
       tc-riscv)       cmd_tc_riscv ;;
